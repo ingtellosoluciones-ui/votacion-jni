@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elecciones JNI 2026</title>
+<style>
+  :root { --azul:#1d4ed8; --azul-claro:#e8efff; --gris:#64748b; --borde:#d5dbe6; --ok:#15803d; --error:#b91c1c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Arial, Helvetica, sans-serif; background:#f3f5f9; color:#0f172a; }
+  .wrap { max-width:560px; margin:0 auto; padding:16px 14px 60px; }
+  h1 { font-size:22px; margin:8px 0 4px; }
+  h2 { font-size:18px; margin:0 0 10px; }
+  p.sub { color:var(--gris); margin:0 0 16px; font-size:15px; }
+  .card { background:#fff; border:1px solid var(--borde); border-radius:14px; padding:16px; margin-bottom:14px; }
+  input[type=text] { width:100%; font-size:26px; letter-spacing:4px; text-align:center; text-transform:uppercase; padding:14px; border:2px solid var(--borde); border-radius:12px; }
+  input[type=text]:focus { outline:none; border-color:var(--azul); }
+  button { font-size:17px; font-weight:bold; border:0; border-radius:12px; padding:14px 18px; cursor:pointer; width:100%; }
+  .primario { background:var(--azul); color:#fff; }
+  .secundario { background:#e2e8f0; color:#0f172a; margin-top:10px; }
+  button:disabled { opacity:.5; }
+  .msg { margin-top:10px; font-size:15px; min-height:20px; color:var(--error); }
+  .opcion { display:flex; align-items:center; gap:12px; padding:13px 12px; border:2px solid var(--borde); border-radius:12px; margin-top:8px; font-size:17px; cursor:pointer; }
+  .opcion.sel { border-color:var(--azul); background:var(--azul-claro); }
+  .opcion.bloq { opacity:.45; }
+  .opcion input { width:22px; height:22px; flex:none; }
+  .nota { font-size:14px; color:var(--gris); margin:0 0 4px; }
+  .contador { font-weight:bold; color:var(--azul); }
+  .resumen div { display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid #eef1f6; font-size:15px; }
+  .resumen b { text-align:right; }
+  .grande { text-align:center; padding:30px 10px; }
+  .grande .check { font-size:64px; color:var(--ok); }
+  .oculto { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Pantalla 1: código -->
+  <div id="p-codigo">
+    <h1 id="titulo">Elecciones JNI 2026</h1>
+    <p class="sub">Escribe el código que está en tu papelito.</p>
+    <div class="card">
+      <input type="text" id="codigo" maxlength="9" autocomplete="off" autocapitalize="characters" placeholder="ABC-123">
+      <div class="msg" id="msg-codigo"></div>
+      <button class="primario" id="btn-codigo" style="margin-top:8px">Continuar</button>
+    </div>
+  </div>
+
+  <!-- Pantalla 2: papeleta -->
+  <div id="p-papeleta" class="oculto">
+    <h1>Tu voto</h1>
+    <p class="sub">Voto secreto. Elige una opción en cada cargo.</p>
+    <div id="cargos"></div>
+    <div class="msg" id="msg-papeleta"></div>
+    <button class="primario" id="btn-revisar">Revisar mi voto</button>
+  </div>
+
+  <!-- Pantalla 3: revisar -->
+  <div id="p-revisar" class="oculto">
+    <h1>Revisa tu voto</h1>
+    <p class="sub">Después de enviar ya no se puede cambiar.</p>
+    <div class="card resumen" id="resumen"></div>
+    <div class="msg" id="msg-enviar"></div>
+    <button class="primario" id="btn-enviar">Confirmar y enviar</button>
+    <button class="secundario" id="btn-corregir">Corregir</button>
+  </div>
+
+  <!-- Pantalla 4: gracias -->
+  <div id="p-gracias" class="oculto">
+    <div class="card grande">
+      <div class="check">✔</div>
+      <h2>¡Tu voto fue registrado!</h2>
+      <p class="sub">Dios te bendiga. Entrega el celular al encargado.</p>
+      <button class="secundario" id="btn-siguiente">Siguiente votante</button>
+    </div>
+  </div>
+
+  <!-- Cerrada -->
+  <div id="p-cerrada" class="oculto">
+    <div class="card grande"><h2>La votación está cerrada.</h2></div>
+  </div>
+
+</div>
+
+<script>
+// PEGA AQUÍ la URL de tu aplicación web de Apps Script (la que termina en /exec), entre las comillas:
+var API_URL = 'https://script.google.com/macros/s/AKfycbyUasmKvgxScmx9U06NR3r6CPgnFt4tGbnegv1n_eGUNr2_Fiu1s2ICZ0tqlB8hZao-/exec';
+
+// Conexión con Apps Script (sin usar la página de Google)
+var google = { script: {} };
+Object.defineProperty(google.script, 'run', { get: function () {
+  var okH = function () {}, failH = function () {};
+  function llamar(accion, params) {
+    var qs = Object.keys(params).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&');
+    fetch(API_URL + '?action=' + accion + (qs ? '&' + qs : ''))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { okH(d); }, function (e) { failH(e); });
+  }
+  var obj = {
+    withSuccessHandler: function (f) { okH = f; return obj; },
+    withFailureHandler: function (f) { failH = f; return obj; },
+    getBallot: function () { llamar('ballot', {}); },
+    verificarCodigo: function (c) { llamar('verify', { code: c }); },
+    registrarVoto: function (c, v) { llamar('vote', { code: c, votes: JSON.stringify(v) }); }
+  };
+  return obj;
+} });
+</script>
+<script>
+(function () {
+  var cargos = [], votos = {}, codigo = '', timerReinicio = null;
+  var $ = function (id) { return document.getElementById(id); };
+
+  function mostrar(id) {
+    ['p-codigo','p-papeleta','p-revisar','p-gracias','p-cerrada'].forEach(function (p) {
+      $(p).classList.toggle('oculto', p !== id);
+    });
+    window.scrollTo(0, 0);
+  }
+
+  function limpiarTodo() {
+    votos = {}; codigo = '';
+    $('codigo').value = ''; $('msg-codigo').textContent = '';
+    $('msg-papeleta').textContent = ''; $('msg-enviar').textContent = '';
+    $('btn-codigo').disabled = false; $('btn-enviar').disabled = false;
+    if (timerReinicio) { clearTimeout(timerReinicio); timerReinicio = null; }
+    mostrar('p-codigo');
+  }
+
+  function dibujarPapeleta() {
+    var cont = $('cargos'); cont.innerHTML = '';
+    cargos.forEach(function (cargo) {
+      var card = document.createElement('div'); card.className = 'card';
+      var h = document.createElement('h2'); h.textContent = cargo.titulo; card.appendChild(h);
+      var nota = document.createElement('p'); nota.className = 'nota';
+      if (cargo.max === 1) { nota.textContent = 'Elegir uno'; }
+      else {
+        nota.appendChild(document.createTextNode('Elegir hasta ' + cargo.max + ' · marcados: '));
+        var s = document.createElement('span'); s.className = 'contador'; s.id = 'cnt-' + cargo.id; s.textContent = '0/' + cargo.max;
+        nota.appendChild(s);
+      }
+      card.appendChild(nota);
+      cargo.opciones.forEach(function (op) {
+        var lab = document.createElement('label'); lab.className = 'opcion';
+        var inp = document.createElement('input');
+        inp.type = cargo.max === 1 ? 'radio' : 'checkbox';
+        inp.name = cargo.id; inp.value = op;
+        inp.addEventListener('change', function () { alElegir(cargo, card); });
+        var sp = document.createElement('span'); sp.textContent = op;
+        lab.appendChild(inp); lab.appendChild(sp); card.appendChild(lab);
+      });
+      cont.appendChild(card);
+    });
+  }
+
+  function alElegir(cargo, card) {
+    var marcados = [].slice.call(card.querySelectorAll('input:checked')).map(function (i) { return i.value; });
+    votos[cargo.id] = cargo.max === 1 ? (marcados[0] || null) : marcados;
+    var todos = [].slice.call(card.querySelectorAll('.opcion'));
+    todos.forEach(function (lab) {
+      var inp = lab.querySelector('input');
+      lab.classList.toggle('sel', inp.checked);
+      if (cargo.max > 1) {
+        var bloquear = !inp.checked && marcados.length >= cargo.max;
+        inp.disabled = bloquear; lab.classList.toggle('bloq', bloquear);
+      }
+    });
+    if (cargo.max > 1) $('cnt-' + cargo.id).textContent = marcados.length + '/' + cargo.max;
+  }
+
+  function validar() {
+    for (var i = 0; i < cargos.length; i++) {
+      var c = cargos[i], v = votos[c.id];
+      if (c.max === 1 && !v) return 'Falta elegir en: ' + c.titulo;
+      if (c.max > 1 && (!v || v.length < 1)) return 'Elige al menos 1 candidato en: ' + c.titulo;
+    }
+    return '';
+  }
+
+  function dibujarResumen() {
+    var r = $('resumen'); r.innerHTML = '';
+    cargos.forEach(function (c) {
+      var fila = document.createElement('div');
+      var a = document.createElement('span'); a.textContent = c.titulo;
+      var b = document.createElement('b');
+      b.textContent = c.max === 1 ? votos[c.id] : votos[c.id].join(', ');
+      fila.appendChild(a); fila.appendChild(b); r.appendChild(fila);
+    });
+  }
+
+  function continuar() {
+    var valor = $('codigo').value;
+    $('msg-codigo').textContent = ''; $('btn-codigo').disabled = true;
+    google.script.run
+      .withSuccessHandler(function (r) {
+        $('btn-codigo').disabled = false;
+        if (!r.ok) { $('msg-codigo').textContent = r.msg; return; }
+        codigo = valor; votos = {}; dibujarPapeleta(); mostrar('p-papeleta');
+      })
+      .withFailureHandler(function () {
+        $('btn-codigo').disabled = false;
+        $('msg-codigo').textContent = 'No se pudo conectar. Inténtalo otra vez.';
+      })
+      .verificarCodigo(valor);
+  }
+
+  function enviar() {
+    $('btn-enviar').disabled = true; $('msg-enviar').textContent = '';
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (r.ok) {
+          votos = {}; codigo = ''; $('cargos').innerHTML = ''; $('resumen').innerHTML = '';
+          mostrar('p-gracias');
+          timerReinicio = setTimeout(limpiarTodo, 10000); // borra todo por privacidad en celular prestado
+        } else {
+          $('btn-enviar').disabled = false; $('msg-enviar').textContent = r.msg;
+        }
+      })
+      .withFailureHandler(function () {
+        $('btn-enviar').disabled = false;
+        $('msg-enviar').textContent = 'No se pudo enviar. Presiona otra vez (tu voto se cuenta una sola vez).';
+      })
+      .registrarVoto(codigo, votos);
+  }
+
+  $('btn-codigo').addEventListener('click', continuar);
+  $('codigo').addEventListener('keydown', function (e) { if (e.key === 'Enter') continuar(); });
+  $('btn-revisar').addEventListener('click', function () {
+    var err = validar(); $('msg-papeleta').textContent = err;
+    if (!err) { dibujarResumen(); mostrar('p-revisar'); }
+  });
+  $('btn-corregir').addEventListener('click', function () { mostrar('p-papeleta'); });
+  $('btn-enviar').addEventListener('click', enviar);
+  $('btn-siguiente').addEventListener('click', limpiarTodo);
+
+  google.script.run.withSuccessHandler(function (b) {
+    cargos = b.cargos; $('titulo').textContent = b.titulo;
+    if (!b.abierta) mostrar('p-cerrada');
+  }).getBallot();
+})();
+</script>
+</body>
+</html>
