@@ -20,6 +20,7 @@
   .secundario { background:#e2e8f0; color:#0f172a; margin-top:10px; }
   button:disabled { opacity:.5; }
   .msg { margin-top:10px; font-size:15px; min-height:20px; color:var(--error); }
+  .aviso { background:var(--azul-claro); border:1px solid #c7d7fb; border-radius:12px; padding:10px 12px; margin-bottom:14px; font-size:15px; }
   .opcion { display:flex; align-items:center; gap:12px; padding:13px 12px; border:2px solid var(--borde); border-radius:12px; margin-top:8px; font-size:17px; cursor:pointer; }
   .opcion.sel { border-color:var(--azul); background:var(--azul-claro); }
   .opcion.bloq { opacity:.45; }
@@ -36,9 +37,8 @@
 <body>
 <div class="wrap">
 
-  <!-- Pantalla 1: código -->
   <div id="p-codigo">
-    <h1 id="titulo">Elecciones JNI 2026</h1>
+    <h1>Elecciones JNI 2026</h1>
     <p class="sub">Escribe el código que está en tu papelito.</p>
     <div class="card">
       <input type="text" id="codigo" maxlength="9" autocomplete="off" autocapitalize="characters" placeholder="ABC-123">
@@ -47,16 +47,15 @@
     </div>
   </div>
 
-  <!-- Pantalla 2: papeleta -->
   <div id="p-papeleta" class="oculto">
-    <h1>Tu voto</h1>
+    <h1 id="titulo-papeleta">Tu voto</h1>
     <p class="sub">Voto secreto. Elige una opción en cada cargo.</p>
+    <div class="aviso oculto" id="aviso-ronda"></div>
     <div id="cargos"></div>
     <div class="msg" id="msg-papeleta"></div>
     <button class="primario" id="btn-revisar">Revisar mi voto</button>
   </div>
 
-  <!-- Pantalla 3: revisar -->
   <div id="p-revisar" class="oculto">
     <h1>Revisa tu voto</h1>
     <p class="sub">Después de enviar ya no se puede cambiar.</p>
@@ -66,19 +65,13 @@
     <button class="secundario" id="btn-corregir">Corregir</button>
   </div>
 
-  <!-- Pantalla 4: gracias -->
   <div id="p-gracias" class="oculto">
     <div class="card grande">
-      <div class="check">✔</div>
+      <div class="check">&#10004;</div>
       <h2>¡Tu voto fue registrado!</h2>
-      <p class="sub">Dios te bendiga. Entrega el celular al encargado.</p>
+      <p class="sub">Dios te bendiga. Entrega el celular al encargado y guarda tu papelito: puede servir en otra ronda.</p>
       <button class="secundario" id="btn-siguiente">Siguiente votante</button>
     </div>
-  </div>
-
-  <!-- Cerrada -->
-  <div id="p-cerrada" class="oculto">
-    <div class="card grande"><h2>La votación está cerrada.</h2></div>
   </div>
 
 </div>
@@ -87,42 +80,34 @@
 // PEGA AQUÍ la URL de tu aplicación web de Apps Script (la que termina en /exec), entre las comillas:
 var API_URL = 'https://script.google.com/macros/s/AKfycbyUasmKvgxScmx9U06NR3r6CPgnFt4tGbnegv1n_eGUNr2_Fiu1s2ICZ0tqlB8hZao-/exec';
 
-// Conexión con Apps Script (sin usar la página de Google)
-var google = { script: {} };
-Object.defineProperty(google.script, 'run', { get: function () {
-  var okH = function () {}, failH = function () {};
-  function llamar(accion, params) {
-    var qs = Object.keys(params).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&');
-    fetch(API_URL + '?action=' + accion + (qs ? '&' + qs : ''))
-      .then(function (r) { return r.json(); })
-      .then(function (d) { okH(d); }, function (e) { failH(e); });
-  }
-  var obj = {
-    withSuccessHandler: function (f) { okH = f; return obj; },
-    withFailureHandler: function (f) { failH = f; return obj; },
-    getBallot: function () { llamar('ballot', {}); },
-    verificarCodigo: function (c) { llamar('verify', { code: c }); },
-    registrarVoto: function (c, v) { llamar('vote', { code: c, votes: JSON.stringify(v) }); }
-  };
-  return obj;
-} });
-</script>
-<script>
 (function () {
-  var cargos = [], votos = {}, codigo = '', timerReinicio = null;
+  var cargos = [], votos = {}, codigo = '', ronda = 0, token = '', timerReinicio = null;
   var $ = function (id) { return document.getElementById(id); };
 
+  function llamar(accion, params) {
+    var qs = Object.keys(params).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&');
+    return fetch(API_URL + '?action=' + accion + (qs ? '&' + qs : '')).then(function (r) { return r.json(); });
+  }
+
+  function nuevoToken() {
+    try {
+      var a = new Uint8Array(12); (window.crypto || window.msCrypto).getRandomValues(a);
+      return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+    } catch (e) {
+      var s = ''; for (var i = 0; i < 24; i++) s += Math.floor(Math.random() * 16).toString(16); return s;
+    }
+  }
+
   function mostrar(id) {
-    ['p-codigo','p-papeleta','p-revisar','p-gracias','p-cerrada'].forEach(function (p) {
-      $(p).classList.toggle('oculto', p !== id);
-    });
+    ['p-codigo', 'p-papeleta', 'p-revisar', 'p-gracias'].forEach(function (p) { $(p).classList.toggle('oculto', p !== id); });
     window.scrollTo(0, 0);
   }
 
-  function limpiarTodo() {
-    votos = {}; codigo = '';
-    $('codigo').value = ''; $('msg-codigo').textContent = '';
+  function limpiarTodo(mensaje) {
+    votos = {}; codigo = ''; token = ''; cargos = [];
+    $('codigo').value = ''; $('msg-codigo').textContent = mensaje || '';
     $('msg-papeleta').textContent = ''; $('msg-enviar').textContent = '';
+    $('cargos').innerHTML = ''; $('resumen').innerHTML = '';
     $('btn-codigo').disabled = false; $('btn-enviar').disabled = false;
     if (timerReinicio) { clearTimeout(timerReinicio); timerReinicio = null; }
     mostrar('p-codigo');
@@ -130,11 +115,16 @@ Object.defineProperty(google.script, 'run', { get: function () {
 
   function dibujarPapeleta() {
     var cont = $('cargos'); cont.innerHTML = '';
+    $('titulo-papeleta').textContent = ronda > 1 ? 'Tu voto · Ronda ' + ronda : 'Tu voto';
+    var aviso = $('aviso-ronda');
+    if (ronda > 1) { aviso.textContent = 'Ronda ' + ronda + ': solo se vota en los cargos que quedaron pendientes.'; aviso.classList.remove('oculto'); }
+    else aviso.classList.add('oculto');
+
     cargos.forEach(function (cargo) {
       var card = document.createElement('div'); card.className = 'card';
       var h = document.createElement('h2'); h.textContent = cargo.titulo; card.appendChild(h);
       var nota = document.createElement('p'); nota.className = 'nota';
-      if (cargo.max === 1) { nota.textContent = 'Elegir uno'; }
+      if (cargo.max === 1) nota.textContent = 'Elegir uno';
       else {
         nota.appendChild(document.createTextNode('Elegir hasta ' + cargo.max + ' · marcados: '));
         var s = document.createElement('span'); s.className = 'contador'; s.id = 'cnt-' + cargo.id; s.textContent = '0/' + cargo.max;
@@ -157,8 +147,7 @@ Object.defineProperty(google.script, 'run', { get: function () {
   function alElegir(cargo, card) {
     var marcados = [].slice.call(card.querySelectorAll('input:checked')).map(function (i) { return i.value; });
     votos[cargo.id] = cargo.max === 1 ? (marcados[0] || null) : marcados;
-    var todos = [].slice.call(card.querySelectorAll('.opcion'));
-    todos.forEach(function (lab) {
+    [].slice.call(card.querySelectorAll('.opcion')).forEach(function (lab) {
       var inp = lab.querySelector('input');
       lab.classList.toggle('sel', inp.checked);
       if (cargo.max > 1) {
@@ -183,8 +172,7 @@ Object.defineProperty(google.script, 'run', { get: function () {
     cargos.forEach(function (c) {
       var fila = document.createElement('div');
       var a = document.createElement('span'); a.textContent = c.titulo;
-      var b = document.createElement('b');
-      b.textContent = c.max === 1 ? votos[c.id] : votos[c.id].join(', ');
+      var b = document.createElement('b'); b.textContent = c.max === 1 ? votos[c.id] : votos[c.id].join(', ');
       fila.appendChild(a); fila.appendChild(b); r.appendChild(fila);
     });
   }
@@ -192,36 +180,33 @@ Object.defineProperty(google.script, 'run', { get: function () {
   function continuar() {
     var valor = $('codigo').value;
     $('msg-codigo').textContent = ''; $('btn-codigo').disabled = true;
-    google.script.run
-      .withSuccessHandler(function (r) {
-        $('btn-codigo').disabled = false;
-        if (!r.ok) { $('msg-codigo').textContent = r.msg; return; }
-        codigo = valor; votos = {}; dibujarPapeleta(); mostrar('p-papeleta');
-      })
-      .withFailureHandler(function () {
-        $('btn-codigo').disabled = false;
-        $('msg-codigo').textContent = 'No se pudo conectar. Inténtalo otra vez.';
-      })
-      .verificarCodigo(valor);
+    llamar('verify', { code: valor }).then(function (r) {
+      $('btn-codigo').disabled = false;
+      if (!r.ok) { $('msg-codigo').textContent = r.msg; return; }
+      codigo = valor; cargos = r.cargos; ronda = r.ronda; votos = {}; token = nuevoToken();
+      dibujarPapeleta(); mostrar('p-papeleta');
+    }).catch(function () {
+      $('btn-codigo').disabled = false;
+      $('msg-codigo').textContent = 'No se pudo conectar. Revisa tu internet e inténtalo otra vez.';
+    });
   }
 
   function enviar() {
     $('btn-enviar').disabled = true; $('msg-enviar').textContent = '';
-    google.script.run
-      .withSuccessHandler(function (r) {
-        if (r.ok) {
-          votos = {}; codigo = ''; $('cargos').innerHTML = ''; $('resumen').innerHTML = '';
-          mostrar('p-gracias');
-          timerReinicio = setTimeout(limpiarTodo, 10000); // borra todo por privacidad en celular prestado
-        } else {
-          $('btn-enviar').disabled = false; $('msg-enviar').textContent = r.msg;
-        }
-      })
-      .withFailureHandler(function () {
-        $('btn-enviar').disabled = false;
-        $('msg-enviar').textContent = 'No se pudo enviar. Presiona otra vez (tu voto se cuenta una sola vez).';
-      })
-      .registrarVoto(codigo, votos);
+    llamar('vote', { code: codigo, votes: JSON.stringify(votos), ronda: ronda, token: token }).then(function (r) {
+      if (r.ok) {
+        votos = {}; codigo = ''; token = ''; $('cargos').innerHTML = ''; $('resumen').innerHTML = '';
+        mostrar('p-gracias');
+        timerReinicio = setTimeout(function () { limpiarTodo(); }, 10000);
+      } else if (r.reiniciar) {
+        limpiarTodo(r.msg);
+      } else {
+        $('btn-enviar').disabled = false; $('msg-enviar').textContent = r.msg;
+      }
+    }).catch(function () {
+      $('btn-enviar').disabled = false;
+      $('msg-enviar').textContent = 'No se pudo enviar. Presiona otra vez: tu voto se cuenta una sola vez.';
+    });
   }
 
   $('btn-codigo').addEventListener('click', continuar);
@@ -232,12 +217,7 @@ Object.defineProperty(google.script, 'run', { get: function () {
   });
   $('btn-corregir').addEventListener('click', function () { mostrar('p-papeleta'); });
   $('btn-enviar').addEventListener('click', enviar);
-  $('btn-siguiente').addEventListener('click', limpiarTodo);
-
-  google.script.run.withSuccessHandler(function (b) {
-    cargos = b.cargos; $('titulo').textContent = b.titulo;
-    if (!b.abierta) mostrar('p-cerrada');
-  }).getBallot();
+  $('btn-siguiente').addEventListener('click', function () { limpiarTodo(); });
 })();
 </script>
 </body>
