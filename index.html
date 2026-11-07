@@ -81,6 +81,7 @@
 var API_URL = 'https://script.google.com/macros/s/AKfycbzYBTaJQulLUnAsSmmcVEqsK2YkOxVYKg9Lq6OCgkBh6JVeKy-1XPiGnOB4jw1ZYcM/exec';
 
 (function () {
+  var BLANCO = '__BLANCO__';
   var cargos = [], votos = {}, codigo = '', ronda = 0, token = '', timerReinicio = null;
   var $ = function (id) { return document.getElementById(id); };
 
@@ -136,33 +137,52 @@ var API_URL = 'https://script.google.com/macros/s/AKfycbzYBTaJQulLUnAsSmmcVEqsK2
         var inp = document.createElement('input');
         inp.type = cargo.max === 1 ? 'radio' : 'checkbox';
         inp.name = cargo.id; inp.value = op;
-        inp.addEventListener('change', function () { alElegir(cargo, card); });
+        inp.addEventListener('change', function () { alElegir(cargo, card, inp); });
         var sp = document.createElement('span'); sp.textContent = op;
         lab.appendChild(inp); lab.appendChild(sp); card.appendChild(lab);
       });
+      var labB = document.createElement('label'); labB.className = 'opcion';
+      var inpB = document.createElement('input');
+      inpB.type = cargo.max === 1 ? 'radio' : 'checkbox';
+      inpB.name = cargo.id; inpB.value = BLANCO;
+      inpB.addEventListener('change', function () { alElegir(cargo, card, inpB); });
+      var spB = document.createElement('span'); spB.textContent = 'Voto en blanco (no elegir a nadie)';
+      labB.appendChild(inpB); labB.appendChild(spB); card.appendChild(labB);
       cont.appendChild(card);
     });
   }
 
-  function alElegir(cargo, card) {
-    var marcados = [].slice.call(card.querySelectorAll('input:checked')).map(function (i) { return i.value; });
-    votos[cargo.id] = cargo.max === 1 ? (marcados[0] || null) : marcados;
-    [].slice.call(card.querySelectorAll('.opcion')).forEach(function (lab) {
-      var inp = lab.querySelector('input');
+  function alElegir(cargo, card, cambiado) {
+    var inputs = [].slice.call(card.querySelectorAll('input'));
+    if (cargo.max > 1 && cambiado && cambiado.checked) {
+      inputs.forEach(function (i) {
+        if (cambiado.value === BLANCO) { if (i !== cambiado) i.checked = false; }
+        else if (i.value === BLANCO) i.checked = false;
+      });
+    }
+    var marcados = inputs.filter(function (i) { return i.checked; }).map(function (i) { return i.value; });
+    var blanco = marcados.indexOf(BLANCO) >= 0;
+    var reales = marcados.filter(function (v) { return v !== BLANCO; });
+    if (cargo.max === 1) votos[cargo.id] = marcados[0] || null;
+    else if (blanco) votos[cargo.id] = [];
+    else if (reales.length) votos[cargo.id] = reales;
+    else delete votos[cargo.id];
+    inputs.forEach(function (inp) {
+      var lab = inp.parentNode;
       lab.classList.toggle('sel', inp.checked);
       if (cargo.max > 1) {
-        var bloquear = !inp.checked && marcados.length >= cargo.max;
+        var bloquear = !inp.checked && inp.value !== BLANCO && reales.length >= cargo.max;
         inp.disabled = bloquear; lab.classList.toggle('bloq', bloquear);
       }
     });
-    if (cargo.max > 1) $('cnt-' + cargo.id).textContent = marcados.length + '/' + cargo.max;
+    if (cargo.max > 1) $('cnt-' + cargo.id).textContent = reales.length + '/' + cargo.max;
   }
 
   function validar() {
     for (var i = 0; i < cargos.length; i++) {
       var c = cargos[i], v = votos[c.id];
-      if (c.max === 1 && !v) return 'Falta elegir en: ' + c.titulo;
-      if (c.max > 1 && (!v || v.length < 1)) return 'Elige al menos 1 candidato en: ' + c.titulo;
+      if (c.max === 1 && !v) return 'Falta elegir en: ' + c.titulo + ' (o marca Voto en blanco)';
+      if (c.max > 1 && !v) return 'Elige candidatos o marca Voto en blanco en: ' + c.titulo;
     }
     return '';
   }
@@ -172,7 +192,8 @@ var API_URL = 'https://script.google.com/macros/s/AKfycbzYBTaJQulLUnAsSmmcVEqsK2
     cargos.forEach(function (c) {
       var fila = document.createElement('div');
       var a = document.createElement('span'); a.textContent = c.titulo;
-      var b = document.createElement('b'); b.textContent = c.max === 1 ? votos[c.id] : votos[c.id].join(', ');
+      var b = document.createElement('b'); var v = votos[c.id];
+      b.textContent = c.max === 1 ? (v === BLANCO ? 'En blanco' : v) : (v.length ? v.join(', ') : 'En blanco');
       fila.appendChild(a); fila.appendChild(b); r.appendChild(fila);
     });
   }
